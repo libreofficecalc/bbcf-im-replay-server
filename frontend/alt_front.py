@@ -121,7 +121,11 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
 #            print(df)
             df['p1_toon'] = df['p1_toon'].replace(character_keys)
             df['p2_toon'] = df['p2_toon'].replace(character_keys)
-
+            # This is necessary because javascript only supports up to 53-bit integers, so they need to be shown as strings.
+            df['p1_steamid64'] = df['p1_steamid64'].astype(str)
+            df['p2_steamid64'] = df['p2_steamid64'].astype(str)
+            df['recorder_steamid64'] = df['recorder_steamid64'].astype(str)
+            
 
             # Create an HTML table to display the results
             style = {'border': '1px inset black'}
@@ -130,6 +134,7 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             table_body = []
 
             for index, row in df.iterrows():
+
                 table_row = []
                 for col_name in df.columns:
 
@@ -138,6 +143,7 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
                         table_row.append(html.Td(html.A(row[col_name], href=href)))
                     else:
                         table_row.append(html.Td(row[col_name]))
+                    
                 table_body.append(html.Tr(table_row))
 
             
@@ -146,10 +152,11 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
                 html.Tbody(table_body)
             ])
             warning_text = f"{len(df)} matches" if n_clicks >  0 else WARNING_TEXT
+            #print(table)
             return table,warning_text
  #       else:
  #           return None
 
 # Run the Dash app
 if __name__ == '__main__':
-        app.run_server(host = '0.0.0.0',port = 2000, debug=False)
+        app.run_server(host = '0.0.0.0',port = 2000, debug=False) #2000
