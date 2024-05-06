@@ -1,0 +1,12 @@
+#query-results th {
+    border:1px inset black;
+  }
+#query-results  td{
+    border:1px inset black;
+  }
+#query-results table {
+    border:1px outset black;
+  }
+#toon-select-div  {display:inline-block;
+          width:15%;
+          vertical-align: middle;}
