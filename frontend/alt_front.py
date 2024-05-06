@@ -112,8 +112,11 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             result = cursor.fetchall()
 
             conn.close()
-
-
+            # This is necessary because javascript only supports up to 53-bit integers, so they need to be shown as strings. And converting once in pandas was being a pain due to scientific notation
+            for iter,row in enumerate(result):
+                result[iter] |= {'p1_steamid64': str(result[iter]['p1_steamid64']) if result[iter]['p1_steamid64'] else ""}
+                result[iter] |= {'p2_steamid64': str(result[iter]['p2_steamid64']) if result[iter]['p2_steamid64'] else ""}
+                result[iter] |= {'recorder_steamid64': str(result[iter]['recorder_steamid64']) if result[iter]['recorder_steamid64'] else ""}
             df = pd.DataFrame(result)
             
             if len(df) == 0:
@@ -121,12 +124,8 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
 #            print(df)
             df['p1_toon'] = df['p1_toon'].replace(character_keys)
             df['p2_toon'] = df['p2_toon'].replace(character_keys)
-            # This is necessary because javascript only supports up to 53-bit integers, so they need to be shown as strings.
-            df['p1_steamid64'] = df['p1_steamid64'].astype(str)
-            df['p2_steamid64'] = df['p2_steamid64'].astype(str)
-            df['recorder_steamid64'] = df['recorder_steamid64'].astype(str)
             
-
+            
             # Create an HTML table to display the results
             style = {'border': '1px inset black'}
             style_outer = {'border': '1px outset black'}
@@ -134,7 +133,7 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             table_body = []
 
             for index, row in df.iterrows():
-
+                
                 table_row = []
                 for col_name in df.columns:
 
