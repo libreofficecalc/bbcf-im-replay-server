@@ -8,7 +8,7 @@ import sys
 
 from characters import dropdown_pre_computed_label_value, character_keys
 
-from  DB_INFO_FRONT import DB_HOST, DB_USER, DB_PASSWORD, DATABASE
+from  credentials.DB_INFO_FRONT import DB_HOST, DB_USER, DB_PASSWORD, DATABASE
 
 
 # Define the Dash app

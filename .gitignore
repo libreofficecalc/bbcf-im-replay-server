@@ -27,6 +27,7 @@ share/python-wheels/
 replays/
 files/
 *~
+*credentials/
 MANIFEST
 
 # PyInstaller

@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 
-from config import Config
+from credentials.config import Config
 import hashlib
 import os
 from datetime import datetime
@@ -123,7 +123,7 @@ def upload_file():
 
 
 if __name__ == '__main__':
-        app.config['UPLOAD_FOLDER']= './replays'
+        #app.config['UPLOAD_FOLDER']= './replays'
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
                 os.makedirs(app.config['UPLOAD_FOLDER'])
         #app.config.from_object(Config)
@@ -132,7 +132,7 @@ if __name__ == '__main__':
 #        print(inspector.get_table_names())
 #        print(engine.table_names())
 #        db_insert()
-        app.run(host = '0.0.0.0', port = 5000, debug=False)
+        app.run(host = '0.0.0.0', port = 8500, debug=False) #5000
 
 
 
