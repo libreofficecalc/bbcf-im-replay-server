@@ -41,9 +41,9 @@ def get_hashed_filename(data):
 
         """this will ensure that the hash will only use the parts that are the same for all players
         avoiding two replays of the same match to have different hashes due to differente recorder, timezone, etc"""
-        bytes_to_hash = (bytes_metadata['p1_toon'] + bytes_metadata['p2_toon'] + bytes_metadata['p1_name'] 
-                                + bytes_metadata[ 'p2_name'] + bytes_metadata[ 'p1_steamid64']
-                                + bytes_metadata['p2_steamid64'] + bytes_metadata['replay_inputs'])
+        bytes_to_hash = (bytes_metadata['p1_toon'] + bytes_metadata['p2_toon'] 
+                                + bytes_metadata[ 'p1_steamid64'] + bytes_metadata['p2_steamid64'] 
+                                + bytes_metadata['replay_inputs'])
         md5 = hashlib.md5(bytes_to_hash).hexdigest()[:25]
         md5_filename = md5 + '.dat'
         #print(md5_filename)
@@ -132,7 +132,7 @@ if __name__ == '__main__':
 #        print(inspector.get_table_names())
 #        print(engine.table_names())
 #        db_insert()
-        app.run(host = '0.0.0.0', port = 8500, debug=False) #5000
+        app.run(host = '0.0.0.0', port = 5000, debug=False) #5000
 
 
 
