@@ -17,9 +17,11 @@ app.title = "BBCF IM replay database"
 front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
+VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
 # Define the layout of the app
 app.layout = html.Div([
         html.H1("replay DB"),
+        html.Div(html.A("HOW TO DOWNLOAD AND PLAY REPLAYS",href= VIDEO_EXPLANATION_URL, target=  "_blank")),
         #html.Img(src = "assets/roundtable_de_bleis_banner.png"),
         # Date selection input
         dcc.DatePickerRange(
