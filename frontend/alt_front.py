@@ -18,6 +18,8 @@ front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
+HREF_PREFIX = "http://50.118.225.175/uploads/"
+
 # Define the layout of the app
 app.layout = html.Div([
         html.H1("replay DB"),
@@ -52,7 +54,7 @@ app.layout = html.Div([
         html.Div(id='query-results')
     ])
 
-# Define callback to update query results
+
 @app.callback(
         Output('query-results', 'children'),
     Output('warning-text-latest', 'children'),
@@ -76,11 +78,21 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
 
 
 
-#            conn = connect_mariadb();
             cursor = conn.cursor(dictionary=True)
-
-#            base_query = "SELECT * FROM replay_metadata WHERE datetime_ BETWEEN %s AND %s"
-            base_query = "SELECT * FROM replay_metadata"
+            base_query = f"""SELECT 
+                                datetime_,
+                                p1,
+                                p1_toon,
+                                p2,
+                                p2_toon,
+                                recorder,
+                                winner,
+                                filename,
+                                CAST(p1_steamid64 as char(50)) as p1_steamid64,
+                                CAST(p2_steamid64 as char(50)) as p2_steamid64,
+                                CAST(recorder_steamid64 as char(50)) as recorder_steamid64,
+                                upload_datetime_
+                                FROM replay_metadata"""
             params = ()
             order_clause = "ORDER BY upload_datetime_ desc, datetime_ desc"
             where_clause = f"WHERE TRUE "
@@ -114,11 +126,6 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             result = cursor.fetchall()
 
             conn.close()
-            # This is necessary because javascript only supports up to 53-bit integers, so they need to be shown as strings. And converting once in pandas was being a pain due to scientific notation
-            for iter,row in enumerate(result):
-                result[iter] |= {'p1_steamid64': str(result[iter]['p1_steamid64']) if result[iter]['p1_steamid64'] else ""}
-                result[iter] |= {'p2_steamid64': str(result[iter]['p2_steamid64']) if result[iter]['p2_steamid64'] else ""}
-                result[iter] |= {'recorder_steamid64': str(result[iter]['recorder_steamid64']) if result[iter]['recorder_steamid64'] else ""}
             df = pd.DataFrame(result)
             
             if len(df) == 0:
@@ -133,31 +140,26 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             style_outer = {'border': '1px outset black'}
             table_header = [html.Th(col) for col in df.columns]
             table_body = []
-
             for index, row in df.iterrows():
                 
                 table_row = []
                 for col_name in df.columns:
 
                     if col_name == 'filename':
-                        href = "http://50.118.225.175/uploads/" + row[col_name]
+                        href = HREF_PREFIX + row[col_name]
                         table_row.append(html.Td(html.A(row[col_name], href=href)))
                     else:
                         table_row.append(html.Td(row[col_name]))
                     
                 table_body.append(html.Tr(table_row))
 
-            
             table =  html.Table([
                 html.Thead(html.Tr(table_header)),
                 html.Tbody(table_body)
             ])
             warning_text = f"{len(df)} matches" if n_clicks >  0 else WARNING_TEXT
-            #print(table)
             return table,warning_text
- #       else:
- #           return None
 
-# Run the Dash app
+
 if __name__ == '__main__':
         app.run_server(host = '0.0.0.0',port = 2000, debug=False) #2000
