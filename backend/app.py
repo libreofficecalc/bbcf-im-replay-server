@@ -191,7 +191,7 @@ def get_replays():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    where_clause, query_params = build_query_conditions(request.args)
+    where_clause, query_params = build_query_conditions()
     page, page_size, offset = get_pagination_params()
 
 
