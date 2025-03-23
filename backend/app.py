@@ -6,13 +6,23 @@ import os
 from datetime import datetime
 from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
+import mariadb
 from models import ReplayOrm
 from sqlalchemy.exc import SQLAlchemyError
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 app = Flask(__name__)
 app.config.from_object(Config)
 db = SQLAlchemy(app)
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["30 per minute"], 
+    storage_uri="memory://"
+)
+limiter.init_app(app)
 
 
 
@@ -120,6 +130,93 @@ def upload_file():
                 fsave_data(data, replay_metadata['filename'] )
         
         return jsonify({'message': 'success'}), 200
+
+
+
+
+def get_db_connection():
+    return mariadb.connect(
+        host=Config.DB_HOST,
+        user=Config.DB_USER,
+        password=Config.DB_PASSWORD,
+        database= Config.DATABASE
+    )
+
+
+
+
+
+
+
+def build_query_conditions():
+    filters = []
+    values = []
+    COLUMNS = ['recorder', 'winner', 'filename',
+    'datetime_', 'upload_datetime_',
+    'p1_toon' , 'p2_toon',
+    'p1_steamid64', 'p2_steamid64',
+    'recorder_steamid64']
+
+    
+    for column in COLUMNS:
+        if column in request.args:
+            filters.append(f"{column} = ?")
+            values.append(request.args[column])
+
+    #p1 and p2 are interchangeable
+    player_x = request.args.get('player_x')
+    player_y = request.args.get('player_y')
+
+    if player_x and player_y:
+        filters.append("((p1 LIKE ? AND p2 LIKE ?) OR (p1 LIKE ? AND p2 LIKE ?))")
+        values.extend([f"%{player_x}%", f"%{player_y}%", f"%{player_y}%", f"%{player_x}%"])
+    elif player_x:
+        filters.append("(p1 LIKE ? OR p2 LIKE ?)")
+        values.extend([f"%{player_x}%", f"%{player_x}%"])
+    elif player_y:
+        filters.append("(p1 LIKE ? OR p2 LIKE ?)")
+        values.extend([f"%{player_y}%", f"%{player_y}%"])
+
+    where_clause = f"WHERE {' AND '.join(filters)}" if filters else ""
+    return where_clause, values
+
+def get_pagination_params():
+    page = int(request.args.get('page', 1))
+    page_size = min(int(request.args.get('page_size', 100)), 100)
+    offset = (page - 1) * page_size
+    return page, page_size, offset
+
+@app.route('/get_replays', methods=['GET'])
+def get_replays():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    where_clause, query_params = build_query_conditions(request.args)
+    page, page_size, offset = get_pagination_params()
+
+
+    query = f"""
+        SELECT * FROM replay_metadata 
+        {where_clause} 
+        ORDER BY upload_datetime_ DESC 
+        LIMIT ? OFFSET ?
+    """
+    cursor.execute(query, query_params + [page_size, offset])
+
+    
+    columns = [col[0] for col in cursor.description]
+    results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        "page": page,
+        "page_size": page_size,
+        "results": results
+    })
+
+
 
 
 if __name__ == '__main__':
