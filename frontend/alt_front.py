@@ -19,6 +19,7 @@ WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. uplo
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
 HREF_PREFIX = "http://50.118.225.175/uploads/"
+HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
 
 # Define the layout of the app
 app.layout = html.Div(
@@ -29,11 +30,6 @@ app.layout = html.Div(
                 "HOW TO DOWNLOAD AND PLAY REPLAYS",
                 href=VIDEO_EXPLANATION_URL,
                 target="_blank",
-            )
-        ),
-        html.Div(
-            html.H3(
-                "IMPORTANT: Due to a catastrophic failure on the VPS provider all replays prior to 24/12/2024 are lost."
             )
         ),
         # html.Img(src = "assets/roundtable_de_bleis_banner.png"),
@@ -132,10 +128,12 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             
 
 """
+    #print(query)
     cursor.execute(query, params)
     result = cursor.fetchall()
 
     conn.close()
+    #print(result)
     df = pd.DataFrame(result)
 
     if len(df) == 0:
@@ -143,12 +141,30 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
     #            print(df)
     df["p1_toon"] = df["p1_toon"].replace(character_keys)
     df["p2_toon"] = df["p2_toon"].replace(character_keys)
-
+    #print(df["p1_toon"])
+    df["open"] = df["filename"].copy()
     # Create an HTML table to display the results
     style = {"border": "1px inset black"}
     style_outer = {"border": "1px outset black"}
+    df = df[["datetime_",
+            "p1",
+            "p1_toon",
+            "p2",
+            "p2_toon",
+            "recorder",
+            "winner",
+            "open",
+            "filename",
+            "p1_steamid64",
+            "p2_steamid64",
+            "recorder_steamid64",
+            "upload_datetime_"]]
     table_header = [html.Th(col) for col in df.columns]
     table_body = []
+    match_count= f"{len(df)} matches" if len(df)<=500 else f"{len(df)} matches (500 latest shown)" 
+    if len(df)>500:
+        df = df.head(500)
+
     for index, row in df.iterrows():
 
         table_row = []
@@ -157,13 +173,18 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             if col_name == "filename":
                 href = HREF_PREFIX + row[col_name]
                 table_row.append(html.Td(html.A(row[col_name], href=href)))
+            elif col_name == "open":
+                href = HREF_PREFIX_OPEN + HREF_PREFIX + row[col_name]
+                table_row.append(html.Td(html.A("open", href=href)))
             else:
                 table_row.append(html.Td(row[col_name]))
 
         table_body.append(html.Tr(table_row))
-
+    
     table = html.Table([html.Thead(html.Tr(table_header)), html.Tbody(table_body)])
-    warning_text = f"{len(df)} matches" if n_clicks > 0 else WARNING_TEXT
+    
+    warning_text = match_count if n_clicks > 0 else WARNING_TEXT
+    
     return table, warning_text
 
 
