@@ -34,7 +34,7 @@ app.layout = html.Div(
         ),
          html.Div(
             html.H3(
-                "IMPORTANT: Due to recurring storage issues, replays from 2026/02/09 onwards are not being recorded/corrupted. The replay intake was stopped while this is fixed. Any replay before that date is working. This applies to bbreplay.ovh aswell."
+                "IMPORTANT: Due to recurring storage issues, replays from 2026/02/09 onwards are not being recorded/corrupted. Any replay before that date is working as usual. This applies to bbreplay.ovh aswell. A fix is in the works."
             )),
         # html.Img(src = "assets/roundtable_de_bleis_banner.png"),
         # Date selection input
