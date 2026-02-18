@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 
 from credentials.config import Config
+import io
 import hashlib
 import os
 from datetime import datetime
@@ -10,7 +11,11 @@ import mariadb
 from models import ReplayOrm
 from sqlalchemy.exc import SQLAlchemyError
 from flask_limiter import Limiter
+from flask import abort, Response, send_file
 from flask_limiter.util import get_remote_address
+from pathlib import Path
+import gzip
+import re
 
 
 app = Flask(__name__)
@@ -27,10 +32,18 @@ limiter.init_app(app)
 
 
 
-def fsave_data(data, fname):
-        file_path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
-        with open(file_path, 'wb') as f:
-                f.write(data)
+def fsave_data(data, fname,compress=True):
+
+        #file_path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+        if not compress:
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+                with open(file_path, 'wb') as f:
+                        f.write(data)
+        else:
+              fname = fname + ".gz"
+              file_path = os.path.join(app.config['UPLOAD_FOLDER'], fname)
+              with gzip.open(file_path,'wb') as f:
+                    f.write(data)
         print('File uploaded sucessfully as {}'.format(fname))
         return file_path
 
@@ -232,10 +245,47 @@ if __name__ == '__main__':
         app.run(host = '0.0.0.0', port = 5000, debug=False) #5000
 
 
-
-# @app.route('/download/<path:filename>', methods=['GET'])
-# def download_replay(fname):
-#         print( 'fname: ')
-#         print(fname)
-#         return flask.send_from_directory(directory = app.config['UPLOAD_FOLDER'], filename = fname, download_name = fname)
+""" 
+@app.route('/download/<path:filename>', methods=['GET'])
+def download_replay(fname):
+        print( 'fname: ')
+        print(fname)
+        return flask.send_from_directory(directory = app.config['UPLOAD_FOLDER'], filename = fname, download_name = fname) """
         
+
+
+
+SAFE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
+
+@app.route("/download/<filename>", methods = ['GET'])
+def download_gzip(filename: str):
+    ARCHIVE_DIR = Path(app.config['UPLOAD_FOLDER']).resolve()
+    if not SAFE_NAME.match(filename):
+        abort(400, "Invalid filename")
+
+
+    if not filename.lower().endswith(".gz"):
+        filename_on_disk = filename + ".gz"
+        download_name = filename[:-3]
+    else:
+        filename_on_disk = filename
+        download_name = filename[:-3]
+
+    path = (ARCHIVE_DIR / filename_on_disk).resolve()
+
+    if ARCHIVE_DIR not in path.parents or not path.is_file():
+        abort(404, f"File not found: {filename_on_disk}")
+
+
+    try:
+        with gzip.open(path, "rb") as f:
+            data = f.read()
+    except OSError:
+        abort(400, f"Gzip error opening file: {filename_on_disk}")
+
+    return send_file(
+        io.BytesIO(data),
+        as_attachment=True,
+        download_name=download_name,
+        mimetype="application/octet-stream",
+    )
