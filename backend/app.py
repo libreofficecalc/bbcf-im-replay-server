@@ -263,13 +263,12 @@ def download_gzip(filename: str):
     if not SAFE_NAME.match(filename):
         abort(400, "Invalid filename")
 
-
+    download_name = filename
     if not filename.lower().endswith(".gz"):
         filename_on_disk = filename + ".gz"
-        download_name = filename[:-3]
     else:
         filename_on_disk = filename
-        download_name = filename[:-3]
+        
 
     path = (ARCHIVE_DIR / filename_on_disk).resolve()
 
