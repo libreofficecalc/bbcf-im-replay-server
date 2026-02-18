@@ -32,6 +32,10 @@ app.layout = html.Div(
                 target="_blank",
             )
         ),
+         html.Div(
+            html.H3(
+                "IMPORTANT: Due to recurring storage issues, replays from 2026/02/09 onwards are not being recorded/corrupted. The replay intake was stopped while this is fixed. Any replay before that date is working. This applies to bbreplay.ovh aswell."
+            )),
         # html.Img(src = "assets/roundtable_de_bleis_banner.png"),
         # Date selection input
         dcc.DatePickerRange(
