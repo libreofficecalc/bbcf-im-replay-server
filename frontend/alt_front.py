@@ -18,7 +18,7 @@ front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
-HREF_PREFIX = "http://50.118.225.175/uploads/"
+HREF_PREFIX = "http://50.118.225.175:5000/download/"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
 
 # Define the layout of the app
