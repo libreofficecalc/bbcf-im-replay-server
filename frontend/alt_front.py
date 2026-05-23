@@ -18,7 +18,7 @@ front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
-HREF_PREFIX = "http://50.118.225.175:5000/download/"
+HREF_PREFIX = "http://89.167.76.6:5000/download/"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
 
 # Define the layout of the app
@@ -34,36 +34,38 @@ app.layout = html.Div(
         ),
          html.Div(
             html.H3(
-                "IMPORTANT: Recurring storage issues have been fixed, in the course of the next couple weeks the replays older than 2025/04/02 will be readded. As of now they are missing."
+                "IMPORTANT: Replays from 2026-02-09 to 2026-05-23 are gone due to the previous VPS provider (Hostslick) abruptly stopping services and not responding to tickets, forcing us to change providers."
             )),
         # html.Img(src = "assets/roundtable_de_bleis_banner.png"),
-        # Date selection input
-        dcc.DatePickerRange(
-            id="date-range",
-            display_format="YYYY-MM-DD",
-            start_date_placeholder_text="yyyy-mm-dd",
-            end_date_placeholder_text="yyyy-mm-dd",
-            min_date_allowed="2020-01-01",
-            max_date_allowed="2030-12-31",
-        ),
-        # Dropdown for p1_toon
-        #        dcc.Input(id =  "p1-toon", type = 'number', placeholder= 'Enter toon'),
         html.Div(
-            id="toon-select-div",
-            children=dcc.Dropdown(
-                id="p1-toon",
-                options=dropdown_pre_computed_label_value,
-                placeholder="Select character",
-            ),
+            [
+                dcc.DatePickerRange(
+                    id="date-range",
+                    display_format="YYYY-MM-DD",
+                    start_date_placeholder_text="yyyy-mm-dd",
+                    end_date_placeholder_text="yyyy-mm-dd",
+                    min_date_allowed="2020-01-01",
+                    max_date_allowed="2030-12-31",
+                ),
+                html.Div(
+                    id="toon-select-div",
+                    children=dcc.Dropdown(
+                        id="p1-toon",
+                        options=dropdown_pre_computed_label_value,
+                        placeholder="Select character",
+                    ),
+                    style={"width": "180px"},
+                ),
+                dcc.Input(id="p1-input", type="text", placeholder="Enter player name",
+                          style={"width": "15%"}),
+                dcc.Input(
+                    id="p1-steamid64-input", type="text", placeholder="Enter player steamid64",
+                    style={"width": "15%"}
+                ),
+                html.Button("Query", id="query-button", n_clicks=0),
+            ],
+            style={"display": "flex", "alignItems": "center", "gap": "8px", "flexWrap": "wrap"},
         ),
-        # Text Input For P1
-        dcc.Input(id="p1-input", type="text", placeholder="Enter player name"),
-        # Text input for p1_steamid64
-        dcc.Input(
-            id="p1-steamid64-input", type="text", placeholder="Enter player steamid64"
-        ),
-        # Button to trigger the query
-        html.Button("Query", id="query-button", n_clicks=0),
         html.Div(id="warning-text2", children=WARNING_TEXT2),
         html.Div(id="warning-text-latest", children=WARNING_TEXT),
         # Table to display query results
