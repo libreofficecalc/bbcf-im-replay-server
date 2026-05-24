@@ -91,7 +91,42 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
     )
 
     cursor = conn.cursor(dictionary=True)
-    base_query = f"""SELECT 
+    params = ()
+    where_clause = "WHERE TRUE "
+    limit_clause = "LIMIT 50" if n_clicks == 0 else "LIMIT 500"
+
+    has_date_filter = start_date is not None and end_date is not None
+    has_like_filter = p1 is not None
+
+    if has_date_filter:
+        # Filter on both columns: lets idx_sort (upload_datetime_, datetime_) do a range scan
+        # and cover the ORDER BY with early stop at LIMIT 500.
+        # Valid because upload_datetime_ = datetime_ for all stored replays.
+        where_clause += " AND datetime_ BETWEEN %s AND %s AND upload_datetime_ BETWEEN %s AND %s"
+        params += (start_date, end_date, start_date, end_date)
+
+    if has_like_filter:
+        where_clause += f" AND (p1 LIKE '%{p1}%' OR p2 LIKE '%{p1}%' )"
+
+    if p1_toon is not None:
+        where_clause += " AND (p1_toon = %d OR p2_toon = %d)"
+        params += (p1_toon, p1_toon)
+
+    if p1_steamid64 is not None:
+        try:
+            steamid64_int = int(p1_steamid64)
+            where_clause += " AND (p1_steamid64 = %s OR p2_steamid64 = %s)"
+            params += (steamid64_int, steamid64_int)
+        except (ValueError, TypeError):
+            pass  # non-numeric input, skip this filter
+
+    order_clause = "ORDER BY upload_datetime_ DESC, datetime_ DESC"
+
+    # For LIKE without a date range: ignore idx_sort to avoid 1M random-I/O lookups
+    # (sequential table scan + filesort is faster for wildcard searches)
+    ignore_hint = "IGNORE INDEX (idx_sort)" if (has_like_filter and not has_date_filter) else ""
+
+    base_query = f"""SELECT
                                 datetime_,
                                 p1,
                                 p1_toon,
@@ -104,27 +139,7 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
                                 CAST(p2_steamid64 as char(50)) as p2_steamid64,
                                 CAST(recorder_steamid64 as char(50)) as recorder_steamid64,
                                 upload_datetime_
-                                FROM replay_metadata"""
-    params = ()
-    order_clause = "ORDER BY upload_datetime_ desc, datetime_ desc"
-    where_clause = f"WHERE TRUE "
-    limit_clause = f"LIMIT 50" if n_clicks == 0 else ""
-
-    if start_date is not None and end_date is not None:
-        where_clause += f" AND datetime_ BETWEEN %s AND %s"
-        params += (start_date, end_date)
-
-    if p1 is not None:
-        where_clause += f" AND (p1 LIKE '%{p1}%' OR p2 LIKE '%{p1}%' )"
-        # params += (p1,p1)
-    if p1_toon is not None:
-
-        where_clause += f""" AND (p1_toon = %d  OR p2_toon = %d)"""
-        params += (p1_toon, p1_toon)
-
-    if p1_steamid64 is not None:
-        where_clause += " AND (p1_steamid64 = %d OR p2_steamid64 = %d)"
-        params += (p1_steamid64, p1_steamid64)
+                                FROM replay_metadata {ignore_hint}"""
 
     query = f"""
             {base_query} 
@@ -152,7 +167,7 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
     # Create an HTML table to display the results
     style = {"border": "1px inset black"}
     style_outer = {"border": "1px outset black"}
-    df = df[["datetime_",
+    df = df[["upload_datetime_",
             "p1",
             "p1_toon",
             "p2",
@@ -164,12 +179,10 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
             "p1_steamid64",
             "p2_steamid64",
             "recorder_steamid64",
-            "upload_datetime_"]]
+            "datetime_"]]
     table_header = [html.Th(col) for col in df.columns]
     table_body = []
-    match_count= f"{len(df)} matches" if len(df)<=500 else f"{len(df)} matches (500 latest shown)" 
-    if len(df)>500:
-        df = df.head(500)
+    match_count = f"{len(df)} matches" if len(df) < 500 else "500+ matches (showing latest 500)"
 
     for index, row in df.iterrows():
 
