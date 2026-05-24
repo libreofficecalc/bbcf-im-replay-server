@@ -1,6 +1,8 @@
 import dash
-from dash import dcc, html
+from dash import dcc, html, callback_context, ALL
 from dash.dependencies import Input, Output, State
+from math import ceil
+import json
 import pandas as pd
 import mariadb
 import sys
@@ -20,6 +22,69 @@ WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
 HREF_PREFIX = "http://89.167.76.6:5000/download/"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
+PAGE_SIZE = 500
+
+PAGINATION_STYLE = {
+    "display": "flex", "gap": "4px", "alignItems": "center",
+    "margin": "8px 0", "flexWrap": "wrap",
+}
+
+LINK_BTN = {
+    "background": "none", "border": "none", "padding": "0 2px",
+    "color": "#0000EE", "textDecoration": "underline",
+    "cursor": "pointer", "font": "inherit",
+}
+CURRENT_BTN = {
+    "background": "none", "border": "none", "padding": "0 2px",
+    "fontWeight": "bold", "cursor": "default", "font": "inherit",
+}
+
+
+def build_pagination(current_page, total_pages, loc):
+    """Pagination row with 'Page X of Y' label and numbered link-buttons."""
+    if total_pages <= 1:
+        return html.Div(style={"display": "none"})
+
+    # Which page indices to show (windowed)
+    to_show = set()
+    to_show.update([0, 1])
+    to_show.update([total_pages - 2, total_pages - 1])
+    to_show.update([current_page - 1, current_page, current_page + 1])
+    to_show = sorted(p for p in to_show if 0 <= p < total_pages)
+
+    children = [
+        html.Span(
+            f"Page {current_page + 1} of {total_pages}",
+            style={"marginRight": "8px"},
+        )
+    ]
+    prev = -1
+    for p in to_show:
+        if p > prev + 1:
+            children.append(html.Span("…", style={"padding": "0 6px"}))
+        if p == current_page:
+            children.append(
+                html.Button(
+                    str(p + 1),
+                    id={"type": f"page-btn-{loc}", "index": p},
+                    n_clicks=0,
+                    disabled=True,
+                    style=CURRENT_BTN,
+                )
+            )
+        else:
+            children.append(
+                html.Button(
+                    str(p + 1),
+                    id={"type": f"page-btn-{loc}", "index": p},
+                    n_clicks=0,
+                    style=LINK_BTN,
+                )
+            )
+        prev = p
+
+    return html.Div(children, style=PAGINATION_STYLE)
+
 
 # Define the layout of the app
 app.layout = html.Div(
@@ -32,10 +97,11 @@ app.layout = html.Div(
                 target="_blank",
             )
         ),
-         html.Div(
+        html.Div(
             html.H3(
                 "IMPORTANT: Replays from 2026-02-09 to 2026-05-23 are gone due to the previous VPS provider (Hostslick) abruptly stopping services and not responding to tickets, forcing us to change providers."
-            )),
+            )
+        ),
         # html.Img(src = "assets/roundtable_de_bleis_banner.png"),
         html.Div(
             [
@@ -68,39 +134,62 @@ app.layout = html.Div(
         ),
         html.Div(id="warning-text2", children=WARNING_TEXT2),
         html.Div(id="warning-text-latest", children=WARNING_TEXT),
-        # Table to display query results
+        dcc.Store(id="page-num", data=0),
+        dcc.Store(id="page-request", data={"page": 0}),
+        # Table + pagination (top and bottom) all rendered together
         html.Div(id="query-results"),
     ]
 )
 
 
 @app.callback(
+    Output("page-request", "data"),
+    Input("query-button", "n_clicks"),
+    Input({"type": "page-btn-top", "index": ALL}, "n_clicks"),
+    Input({"type": "page-btn-bottom", "index": ALL}, "n_clicks"),
+    State("page-num", "data"),
+    prevent_initial_call=True,
+)
+def handle_navigation(query_clicks, top_clicks, bottom_clicks, current_page):
+    """Translate any button click into a page-request."""
+    triggered = callback_context.triggered[0]["prop_id"]
+    if "query-button" in triggered:
+        return {"page": 0}
+    if "page-btn-top" in triggered or "page-btn-bottom" in triggered:
+        idx = json.loads(triggered.split(".")[0])["index"]
+        return {"page": idx}
+    raise dash.exceptions.PreventUpdate
+
+
+@app.callback(
     Output("query-results", "children"),
     Output("warning-text-latest", "children"),
-    [Input("query-button", "n_clicks")],
-    [State("date-range", "start_date"), State("date-range", "end_date")],
-    [State("p1-input", "value"), State("p1-steamid64-input", "value")],
+    Output("page-num", "data"),
+    Input("page-request", "data"),
+    State("query-button", "n_clicks"),
+    State("date-range", "start_date"),
+    State("date-range", "end_date"),
+    State("p1-input", "value"),
+    State("p1-steamid64-input", "value"),
     State("p1-toon", "value"),
 )
-def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_toon):
-    #        print(p1_toon)
-    #        if n_clicks > 0:
+def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid64, p1_toon):
+    page_num = page_request.get("page", 0)
 
     conn = mariadb.connect(
         host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DATABASE
     )
-
     cursor = conn.cursor(dictionary=True)
+
     params = ()
     where_clause = "WHERE TRUE "
-    limit_clause = "LIMIT 50" if n_clicks == 0 else "LIMIT 500"
 
     has_date_filter = start_date is not None and end_date is not None
     has_like_filter = p1 is not None
 
     if has_date_filter:
         # Filter on both columns: lets idx_sort (upload_datetime_, datetime_) do a range scan
-        # and cover the ORDER BY with early stop at LIMIT 500.
+        # and cover the ORDER BY with early stop at LIMIT PAGE_SIZE.
         # Valid because upload_datetime_ = datetime_ for all stored replays.
         where_clause += " AND datetime_ BETWEEN %s AND %s AND upload_datetime_ BETWEEN %s AND %s"
         params += (start_date, end_date, start_date, end_date)
@@ -126,6 +215,14 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
     # (sequential table scan + filesort is faster for wildcard searches)
     ignore_hint = "IGNORE INDEX (idx_sort)" if (has_like_filter and not has_date_filter) else ""
 
+    has_any_filter = has_date_filter or has_like_filter or p1_toon is not None or p1_steamid64 is not None
+
+    if not has_any_filter:
+        # No filters active — always show latest 50 regardless of query_clicks
+        limit_clause = "LIMIT 50"
+    else:
+        limit_clause = f"LIMIT {PAGE_SIZE} OFFSET {page_num * PAGE_SIZE}"
+
     base_query = f"""SELECT
                                 datetime_,
                                 p1,
@@ -141,54 +238,63 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
                                 upload_datetime_
                                 FROM replay_metadata {ignore_hint}"""
 
-    query = f"""
-            {base_query} 
-            {where_clause}
-            {order_clause}
-            {limit_clause}
-            
-
-"""
-    #print(query)
+    query = f"{base_query} {where_clause} {order_clause} {limit_clause}"
     cursor.execute(query, params)
     result = cursor.fetchall()
 
+    # Determine total count / pages (only for filtered queries)
+    total_count = None
+    total_pages = None
+    if has_any_filter:
+        if len(result) == 0 and page_num > 0:
+            # Overshot the last page — find the real last page and re-query
+            count_cursor = conn.cursor()
+            count_cursor.execute(
+                f"SELECT COUNT(*) FROM replay_metadata {ignore_hint} {where_clause}", params
+            )
+            total_count = count_cursor.fetchone()[0]
+            if total_count > 0:
+                total_pages = ceil(total_count / PAGE_SIZE)
+                page_num = total_pages - 1
+                cursor.execute(
+                    f"{base_query} {where_clause} {order_clause} "
+                    f"LIMIT {PAGE_SIZE} OFFSET {page_num * PAGE_SIZE}",
+                    params,
+                )
+                result = cursor.fetchall()
+        elif len(result) == PAGE_SIZE:
+            # Page is full — run COUNT(*) to know how many pages there are
+            count_cursor = conn.cursor()
+            count_cursor.execute(
+                f"SELECT COUNT(*) FROM replay_metadata {ignore_hint} {where_clause}", params
+            )
+            total_count = count_cursor.fetchone()[0]
+            total_pages = ceil(total_count / PAGE_SIZE)
+        else:
+            # Current page is the last one
+            total_count = page_num * PAGE_SIZE + len(result)
+            total_pages = page_num + 1
+
     conn.close()
-    #print(result)
     df = pd.DataFrame(result)
 
     if len(df) == 0:
-        return None, "No matches"
-    #            print(df)
+        return None, "No matches", 0
+
     df["p1_toon"] = df["p1_toon"].replace(character_keys)
     df["p2_toon"] = df["p2_toon"].replace(character_keys)
-    #print(df["p1_toon"])
     df["open"] = df["filename"].copy()
-    # Create an HTML table to display the results
-    style = {"border": "1px inset black"}
-    style_outer = {"border": "1px outset black"}
     df = df[["upload_datetime_",
-            "p1",
-            "p1_toon",
-            "p2",
-            "p2_toon",
-            "recorder",
-            "winner",
-            "open",
-            "filename",
-            "p1_steamid64",
-            "p2_steamid64",
-            "recorder_steamid64",
-            "datetime_"]]
+             "p1", "p1_toon", "p2", "p2_toon",
+             "recorder", "winner", "open", "filename",
+             "p1_steamid64", "p2_steamid64", "recorder_steamid64",
+             "datetime_"]]
+
     table_header = [html.Th(col) for col in df.columns]
     table_body = []
-    match_count = f"{len(df)} matches" if len(df) < 500 else "500+ matches (showing latest 500)"
-
-    for index, row in df.iterrows():
-
+    for _, row in df.iterrows():
         table_row = []
         for col_name in df.columns:
-
             if col_name == "filename":
                 href = HREF_PREFIX + row[col_name]
                 table_row.append(html.Td(html.A(row[col_name], href=href)))
@@ -197,14 +303,21 @@ def update_query_results(n_clicks, start_date, end_date, p1, p1_steamid64, p1_to
                 table_row.append(html.Td(html.A("open", href=href)))
             else:
                 table_row.append(html.Td(row[col_name]))
-
         table_body.append(html.Tr(table_row))
-    
+
     table = html.Table([html.Thead(html.Tr(table_header)), html.Tbody(table_body)])
-    
-    warning_text = match_count if n_clicks > 0 else WARNING_TEXT
-    
-    return table, warning_text
+
+    if not has_any_filter:
+        return table, WARNING_TEXT, 0
+
+    warning_text = f"{total_count} matches"
+    content = [
+        build_pagination(page_num, total_pages, "top"),
+        table,
+        build_pagination(page_num, total_pages, "bottom"),
+    ]
+
+    return content, warning_text, page_num
 
 
 if __name__ == "__main__":
