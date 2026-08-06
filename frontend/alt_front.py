@@ -20,7 +20,7 @@ front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
-HREF_PREFIX = "http://89.167.76.6:5000/download/"
+HREF_PREFIX = "http://replays.blazqueue.com/download/"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
 PAGE_SIZE = 500
 
