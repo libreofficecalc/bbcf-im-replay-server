@@ -6,6 +6,7 @@ import json
 import pandas as pd
 import mariadb
 import sys
+import flask
 
 
 from characters import dropdown_pre_computed_label_value, character_keys
@@ -20,7 +21,6 @@ front = app.server
 WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. upload_datetime_ is the time in UTC-4 when the replay was uploaded."
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
-HREF_PREFIX = "http://replays.blazqueue.com/download/"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
 PAGE_SIZE = 500
 
@@ -290,16 +290,26 @@ def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid6
              "p1_steamid64", "p2_steamid64", "recorder_steamid64",
              "datetime_"]]
 
+    # build the link off whatever host they came in on instead of hardcoding it
+    # (ip:5000 if direct, domain if through cloudflare)
+    # need X-Forwarded-Proto for the real scheme cause the origin only ever sees http,
+    # otherwise chrome blocks the http download on an https page
+    scheme = flask.request.headers.get("X-Forwarded-Proto", flask.request.scheme)
+    host = flask.request.host
+    download_prefix = f"{scheme}://{host}/download/"
+    # open link stays http, the game grabs it itself so mixed content doesnt matter here
+    open_download_prefix = f"http://{host}/download/"
+
     table_header = [html.Th(col) for col in df.columns]
     table_body = []
     for _, row in df.iterrows():
         table_row = []
         for col_name in df.columns:
             if col_name == "filename":
-                href = HREF_PREFIX + row[col_name]
+                href = download_prefix + row[col_name]
                 table_row.append(html.Td(html.A(row[col_name], href=href)))
             elif col_name == "open":
-                href = HREF_PREFIX_OPEN + HREF_PREFIX + row[col_name]
+                href = HREF_PREFIX_OPEN + open_download_prefix + row[col_name]
                 table_row.append(html.Td(html.A("open", href=href)))
             else:
                 table_row.append(html.Td(row[col_name]))
