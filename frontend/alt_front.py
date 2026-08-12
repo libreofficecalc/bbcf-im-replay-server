@@ -7,6 +7,7 @@ import pandas as pd
 import mariadb
 import sys
 import flask
+import ipaddress
 
 
 from characters import dropdown_pre_computed_label_value, character_keys
@@ -22,6 +23,7 @@ WARNING_TEXT2 = "datetime_ is the local time where the replay was recorded. uplo
 WARNING_TEXT = "Showing latest 50 replays by upload time"
 VIDEO_EXPLANATION_URL = "https://youtu.be/oVJ-JNeJBVo"
 HREF_PREFIX_OPEN = "steam://run/586140/?load-replay="
+DOWNLOAD_PORT = 5000  # backend download port, needed for direct ip access. the domain proxies /download so it doesnt show up there
 PAGE_SIZE = 500
 
 PAGINATION_STYLE = {
@@ -290,15 +292,29 @@ def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid6
              "p1_steamid64", "p2_steamid64", "recorder_steamid64",
              "datetime_"]]
 
-    # build the link off whatever host they came in on instead of hardcoding it
-    # (ip:5000 if direct, domain if through cloudflare)
-    # need X-Forwarded-Proto for the real scheme cause the origin only ever sees http,
-    # otherwise chrome blocks the http download on an https page
-    scheme = flask.request.headers.get("X-Forwarded-Proto", flask.request.scheme)
+    # build the links off however they reached the page instead of hardcoding it.
+    # raw ip = they hit the box directly so downloads have to point at the backend
+    # port (:5000). a domain = they came through cloudflare which proxies /download
+    # on the standard port, so no port there.
     host = flask.request.host
-    download_prefix = f"{scheme}://{host}/download/"
-    # open link stays http, the game grabs it itself so mixed content doesnt matter here
-    open_download_prefix = f"http://{host}/download/"
+    hostname = host.split(":")[0]
+    try:
+        ipaddress.ip_address(hostname)
+        is_ip = True
+    except ValueError:
+        is_ip = False
+
+    if is_ip:
+        prefix = f"http://{hostname}:{DOWNLOAD_PORT}/download/"
+        download_prefix = prefix
+        open_download_prefix = prefix
+    else:
+        # X-Forwarded-Proto for the real scheme cause the origin only sees http,
+        # otherwise chrome blocks the http download on an https page
+        scheme = flask.request.headers.get("X-Forwarded-Proto", flask.request.scheme)
+        download_prefix = f"{scheme}://{host}/download/"
+        # open link stays http, the game grabs it itself so mixed content doesnt matter
+        open_download_prefix = f"http://{host}/download/"
 
     table_header = [html.Th(col) for col in df.columns]
     table_body = []
