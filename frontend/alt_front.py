@@ -13,6 +13,10 @@ import ipaddress
 from characters import dropdown_pre_computed_label_value, character_keys
 
 from credentials.DB_INFO_FRONT import DB_HOST, DB_USER, DB_PASSWORD, DATABASE
+try:
+    from credentials.DB_INFO_FRONT import DB_PORT
+except ImportError:
+    DB_PORT = 3306
 
 
 # Define the Dash app
@@ -179,8 +183,23 @@ def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid6
     page_num = page_request.get("page", 0)
 
     conn = mariadb.connect(
-        host=DB_HOST, user=DB_USER, password=DB_PASSWORD, database=DATABASE
+        host=DB_HOST, port=DB_PORT, user=DB_USER, password=DB_PASSWORD, database=DATABASE,
+        autocommit=True,   # no transaction left open (it would hold the table's metadata lock)
     )
+    try:
+        return query_page(conn, page_num, start_date, end_date, p1, p1_steamid64, p1_toon)
+    except mariadb.Error as e:
+        if getattr(e, "errno", None) == 1969:   # max_statement_time
+            return None, "This search took too long: add a character, a date range or a Steam ID.", 0
+        raise
+    finally:
+        conn.close()
+
+
+def query_page(conn, page_num, start_date, end_date, p1, p1_steamid64, p1_toon):
+    # A name search scans the whole table; past this it is stopped instead of keeping the
+    # database busy for minutes.
+    conn.cursor().execute("SET SESSION max_statement_time = 15")
     cursor = conn.cursor(dictionary=True)
 
     params = ()
@@ -197,10 +216,12 @@ def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid6
         params += (start_date, end_date, start_date, end_date)
 
     if has_like_filter:
-        where_clause += f" AND (p1 LIKE '%{p1}%' OR p2 LIKE '%{p1}%' )"
+        # a parameter, not pasted into the SQL: a name with a quote in it could run its own SQL
+        where_clause += " AND (p1 LIKE %s OR p2 LIKE %s)"
+        params += (f"%{p1}%", f"%{p1}%")
 
     if p1_toon is not None:
-        where_clause += " AND (p1_toon = %d OR p2_toon = %d)"
+        where_clause += " AND (p1_toon = %s OR p2_toon = %s)"
         params += (p1_toon, p1_toon)
 
     if p1_steamid64 is not None:
@@ -277,7 +298,6 @@ def fetch_data(page_request, query_clicks, start_date, end_date, p1, p1_steamid6
             total_count = page_num * PAGE_SIZE + len(result)
             total_pages = page_num + 1
 
-    conn.close()
     df = pd.DataFrame(result)
 
     if len(df) == 0:
