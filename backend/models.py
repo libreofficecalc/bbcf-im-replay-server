@@ -17,4 +17,6 @@ class ReplayOrm(db.Model):
         p1_steamid64 = db.Column(db.Integer)
         p2_steamid64 = db.Column(db.Integer)
         recorder_steamid64 = db.Column(db.Integer)
+        p1_level = db.Column(db.SmallInteger)
+        p2_level = db.Column(db.SmallInteger)
         
