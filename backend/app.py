@@ -9,6 +9,7 @@ from flask_sqlalchemy import SQLAlchemy
 import sqlalchemy
 import mariadb
 from models import ReplayOrm
+from api_v2 import api_v2, record_summaries
 from sqlalchemy.exc import SQLAlchemyError
 from flask_limiter import Limiter
 from flask import abort, Response, send_file
@@ -28,6 +29,9 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 limiter.init_app(app)
+app.register_blueprint(api_v2)
+from stats import stats
+app.register_blueprint(stats)
 
 
 
@@ -85,6 +89,12 @@ def parse_replay_metadata(data,fname):
         replay_metadata['p1_steamid64'] = int.from_bytes(data[0x9C: 0x9C + 0x8], byteorder='little')
         replay_metadata['p2_steamid64'] = int.from_bytes(data[0x166: 0x166 + 0x8], byteorder='little')
         replay_metadata['recorder_steamid64'] = int.from_bytes(data[0x238: 0x238 + 0x8], byteorder='little')
+        # ranked levels as the game shows them (the file stores level - 1; 0 = no level, a third of
+        # all replays, kept as NULL). The highest rank is 40 (Ruler); anything above is a corrupt or
+        # edited file (175 of 1.46 M), also NULL.
+        for side, at in (('p1_level', 0x314), ('p2_level', 0x318)):
+                raw = int.from_bytes(data[at: at + 0x4], byteorder='little')
+                replay_metadata[side] = raw + 1 if 0 < raw < 40 else None
         replay_metadata['filename'] = fname
                 
         print(replay_metadata)
@@ -115,10 +125,31 @@ def db_insert(replay_metadata):
                                 p1_steamid64 = replay_metadata['p1_steamid64'],
                                 p2_steamid64 = replay_metadata['p2_steamid64'],
                                 recorder_steamid64 = replay_metadata['recorder_steamid64'],
+                                p1_level = replay_metadata['p1_level'],
+                                p2_level = replay_metadata['p2_level'],
                                 upload_datetime_ = datetime.now()
                                 )
                         db.session.add(new_row)
                         db.session.commit()
+                        # API v2 summaries (players, names, characters); an upload never fails because of them
+                        try:
+                                conn = get_db_connection()
+                                try:
+                                        # one transaction: one disk flush instead of six
+                                        conn.autocommit = False
+                                        for attempt in range(3):
+                                                try:
+                                                        record_summaries(conn.cursor(), replay_metadata)
+                                                        conn.commit()
+                                                        break
+                                                except mariadb.Error as e:
+                                                        conn.rollback()
+                                                        if 'Deadlock' not in str(e) or attempt == 2:
+                                                                raise
+                                finally:
+                                        conn.close()
+                        except Exception as e:
+                                print('summaries not updated:', e)
                         return True
                 except SQLAlchemyError as e :
                         #print(e)
@@ -150,9 +181,12 @@ def upload_file():
 def get_db_connection():
     return mariadb.connect(
         host=Config.DB_HOST,
+        port=getattr(Config, 'DB_PORT', 3306),
         user=Config.DB_USER,
         password=Config.DB_PASSWORD,
-        database= Config.DATABASE
+        database= Config.DATABASE,
+        # a read must not leave a transaction open: it would hold the table's metadata lock
+        autocommit=True
     )
 
 
@@ -202,6 +236,13 @@ def get_pagination_params():
 @app.route('/get_replays', methods=['GET'])
 def get_replays():
     conn = get_db_connection()
+    try:
+        return query_replays(conn)
+    finally:
+        conn.close()   # also when the query fails (a leaked connection kept its transaction open)
+
+
+def query_replays(conn):
     cursor = conn.cursor()
 
     where_clause, query_params = build_query_conditions()
@@ -209,7 +250,9 @@ def get_replays():
 
 
     query = f"""
-        SELECT * FROM replay_metadata 
+        SELECT filename, datetime_, upload_datetime_, p1, p1_toon, p2, p2_toon, recorder, winner,
+               p1_steamid64, p2_steamid64, recorder_steamid64
+        FROM replay_metadata
         {where_clause} 
         ORDER BY upload_datetime_ DESC 
         LIMIT ? OFFSET ?
@@ -221,7 +264,6 @@ def get_replays():
     results = [dict(zip(columns, row)) for row in cursor.fetchall()]
 
     cursor.close()
-    conn.close()
 
     return jsonify({
         "page": page,
@@ -276,6 +318,15 @@ def download_gzip(filename: str):
 
     if ARCHIVE_DIR not in path.parents or not path.is_file():
         abort(404, f"File not found: {filename_on_disk}")
+
+    # A client that takes gzip gets the stored file as it is: nothing to decompress here and
+    # about 5 times fewer bytes to send. Older clients (no Accept-Encoding: gzip) get the
+    # replay itself, as before.
+    if "gzip" in request.headers.get("Accept-Encoding", "") and request.args.get("raw") != "1":
+        response = send_file(path, mimetype="application/octet-stream", as_attachment=True, download_name=download_name)
+        response.headers["Content-Encoding"] = "gzip"
+        response.headers["Vary"] = "Accept-Encoding"
+        return response
 
 
     try:
